@@ -1,72 +1,146 @@
-import json
-import subprocess
 
-HUB_HOST = "0.0.0.0"
+"""Smart-home device management and power usage demonstration."""
+
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+HUB_HOST = "127.0.0.1"
 HUB_PORT = 8080
-POWER_USAGE = {"light" : 10, "fan": 60, "thermostat": 1500, "tv": 120}
-HUB_PASSWORD = "smarthome-demo"
+
+POWER_USAGE = {
+    "light": 10,
+    "fan": 60,
+    "thermostat": 1500,
+    "tv": 120,
+}
+
+HUB_PASSWORD = os.getenv("SMART_HOME_PASSWORD")
 devices = {}
 
 
-def addDevice(deviceName, kind, room="Living Room", settings={}):
-    devices[deviceName] = {"kind": kind, "room": room, "on": False,
-                           "settings": settings}
+def add_device(device_name, kind, room="Living Room", settings=None):
+    """Register a smart-home device."""
+    if settings is None:
+        settings = {}
+
+    devices[device_name] = {
+        "kind": kind,
+        "room": room,
+        "on": False,
+        "settings": settings.copy(),
+    }
 
 
-def toggleDevice(deviceName):
-    if deviceName in devices:
-        devices[deviceName]["on"] = not devices[deviceName]["on"]
-        return devices[deviceName]["on"]
-    print("Device not found:", deviceName)
+def toggle_device(device_name):
+    """Toggle a device and return its new state."""
+    if device_name not in devices:
+        print("Device not found:", device_name)
+        return None
+
+    devices[device_name]["on"] = not devices[device_name]["on"]
+    return devices[device_name]["on"]
 
 
-def setTemperature(deviceName, value):
-    device = devices[deviceName]
-    if device["kind"] != "thermostat":
-        print(deviceName, "is not a thermostat")
+def set_temperature(device_name, value):
+    """Set a thermostat temperature between 16 and 30 degrees."""
+    device = devices.get(device_name)
+
+    if device is None:
+        print("Device not found:", device_name)
         return False
+
+    if device["kind"] != "thermostat":
+        print(device_name, "is not a thermostat")
+        return False
+
     device["settings"]["temperature"] = min(max(value, 16), 30)
     return True
 
 
-def devicesInRoom(room):
-    return [name for name, info in devices.items() if info["room"] == room]
+def devices_in_room(room):
+    """Return device names in the specified room."""
+    return [
+        name
+        for name, info in devices.items()
+        if info["room"] == room
+    ]
 
 
-def powerUsage():
-    active = [info for info in devices.values() if info["on"]]
-    return sum(POWER_USAGE.get(info["kind"], 0) for info in active)
-
-def saveState(fileName="home_state.json"):
-    with open(fileName, "w") as f:
-        json.dump(devices, f, indent=2)
-
-
-def hubAddress():
-    return HUB_HOST + ":" + str(HUB_PORT)
+def power_usage():
+    """Calculate power usage for all active devices."""
+    return sum(
+        POWER_USAGE.get(info["kind"], 0)
+        for info in devices.values()
+        if info["on"]
+    )
 
 
-def runScene(sceneScript):
-    # Helper kept for the lab: not called by the demo
-    subprocess.call("bash scenes/" + sceneScript, shell=True)
+def save_state(file_name="home_state.json"):
+    """Save device information to a JSON file."""
+    with open(file_name, "w", encoding="utf-8") as state_file:
+        json.dump(devices, state_file, indent=2)
+
+
+def hub_address():
+    """Return the configured local hub address."""
+    return f"{HUB_HOST}:{HUB_PORT}"
+
+
+def run_scene(scene_script):
+    """Run a validated shell script from the scenes directory."""
+    scenes_dir = (Path(__file__).resolve().parent / "scenes").resolve()
+    script_path = (scenes_dir / scene_script).resolve()
+
+    if not script_path.is_relative_to(scenes_dir):
+        raise ValueError("Invalid scene script path")
+
+    if not script_path.is_file() or script_path.suffix != ".sh":
+        raise ValueError("Invalid scene script")
+
+    bash_path = shutil.which("bash")
+    if bash_path is None:
+        raise RuntimeError(
+            "Bash is unavailable. Install Git Bash or use a compatible environment."
+        )
+
+    subprocess.run(
+        [bash_path, str(script_path)],
+        check=True,
+        shell=False,
+        cwd=str(scenes_dir),
+    )
 
 
 def main():
-    addDevice("Ceiling Light", "light")
-    addDevice("Bedroom Fan", "fan", "Bedroom")
-    addDevice("Thermostat", "thermostat", "Bedroom")
-    addDevice("Smart TV", "tv")
-    toggleDevice("Ceiling Light")
-    toggleDevice("Thermostat")
-    toggleDevice("Garage Door")
-    setTemperature("Thermostat", 35)
-    setTemperature("Ceiling Light", 20)
-    print("Bedroom devices:", devicesInRoom("Bedroom"))
-    print("Current power use (W):", powerUsage())
-    print("Hub address:", hubAddress()) # for app setup
+    """Demonstrate smart-home device operations."""
+    devices.clear()
+
+    add_device("Ceiling Light", "light")
+    add_device("Bedroom Fan", "fan", "Bedroom")
+    add_device("Thermostat", "thermostat", "Bedroom")
+    add_device("Smart TV", "tv")
+
+    toggle_device("Ceiling Light")
+    toggle_device("Thermostat")
+    toggle_device("Garage Door")
+
+    set_temperature("Thermostat", 35)
+    set_temperature("Ceiling Light", 20)
+
+    print("Bedroom devices:", devices_in_room("Bedroom"))
+    print("Current power use (W):", power_usage())
+    print("Hub address:", hub_address())
     print("Light settings:", devices["Ceiling Light"]["settings"])
-    print("Devices on:", [name for name, info in devices.items() if info["on"]])
-    saveState()
+    print(
+        "Devices on:",
+        [name for name, info in devices.items() if info["on"]],
+    )
+
+    save_state()
 
 
-main()
+if __name__ == "__main__":
+    main()
