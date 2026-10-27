@@ -103,7 +103,8 @@ def run_scene(scene_script):
     bash_path = shutil.which("bash")
     if bash_path is None:
         raise RuntimeError(
-            "Bash is unavailable. Install Git Bash or use a compatible environment."
+            "Bash is unavailable. Install Git Bash or use a compatible "
+            "environment."
         )
 
     subprocess.run(
